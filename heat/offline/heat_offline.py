@@ -3,13 +3,6 @@
 
 # In[1]:
 
-
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[24]:
-
-
 import numpy as np
 from numpy.random import binomial
 import torch
@@ -29,7 +22,7 @@ from scipy.stats import multivariate_normal
 
 
 device = torch.device("cuda:0")
-seed = 31
+seed = 43
 torch.manual_seed(seed)
 np.random.seed(seed)
 # device
@@ -51,7 +44,6 @@ plt.rcParams.update(params)
 
 # # Load Data:
 
-# In[27]:
 
 
 x_all = np.load("../data/x_train.npy")
@@ -64,71 +56,17 @@ y_all = y_all[:,::8,...]
 y_val = y_val[:,::8,...]
 y_test = y_test[:,::8,...]
 initial = np.load("../data/initial_pic.npy").reshape(1,32)
-# print(y_test)
-
-
-# In[2]:
-
-
-scale_mean_y = np.mean(y_all)
-scale_std_y = np.std(y_all)
-
-y_all = (y_all - scale_mean_y)/scale_std_y 
-y_val = (y_val - scale_mean_y)/scale_std_y 
-y_test = (y_test - scale_mean_y)/scale_std_y 
-
-# y_all = np.insert(y_all, 0, initial, axis = 1)
-# y_val = np.insert(y_val, 0, initial, axis = 1)
-# y_test = np.insert(y_test, 0, initial, axis = 1)
-
-
-# In[33]:
 
 
 print(y_all.shape)
 print(y_val.shape)
 print(y_test.shape)
-print(scale_mean_y)
-print(scale_std_y)
 
 
 # In[73]:
 
 
 from datetime import datetime
-# In[28]:
-
-
-# print(x_all)
-
-
-# In[29]:
-
-
-# print(np.array(y_all).shape)
-# for elem in y_all:
-#     for sim in elem:
-#         draw(sim[0], sim[1])
-
-
-# In[30]:
-
-
-# # replace beta_epsilon_all with fkAB to initiate the mask!
-# mask_init = np.zeros(len(x_all))
-# mask_init[:8] = 1
-
-# np.random.shuffle(mask_init)
-# x_train_init = x_all[mask_init.astype('bool')]
-# print(x_train_init)
-
-# # use the selected fkAB values to select their corresponding data
-# y_train_init = np.array(y_all)[mask_init.astype('bool')]
-# # selected_y.shape[2]*selected_y.shape[3]*selected_y.shape[4] : 50 * 2 * 30 * 30
-# # each data point for y with the timestamp info included: 2(A and B) ,(32 , 32) <- pixels 
-# print(x_train_init.shape, y_train_init.shape)
-# print(mask_init)
-
 
 # # CNP
 
@@ -182,47 +120,7 @@ class ZEncoder(torch.nn.Module):
 
         return self.m1(inputs), self.logvar1(inputs)
 
-"""Original Decoder implementation without convolutional layer"""
-# class Decoder(torch.nn.Module):
-#     """
-#     Takes the x star points, along with a 'function encoding', z, and makes predictions.
-#     """
-#     def __init__(self, in_dim, out_dim, init_func=torch.nn.init.normal_):
-#         super(Decoder, self).__init__()
-#         self.l1_size = 16 #8
-#         self.l2_size = 32 #16
-#         self.l3_size = 64 #DNE
-        
-#         self.l1 = torch.nn.Linear(in_dim, self.l1_size)
-#         self.l2 = torch.nn.Linear(self.l1_size, self.l2_size)
-#         self.l3 = torch.nn.Linear(self.l2_size, self.l3_size)
-#         self.l4 = torch.nn.Linear(self.l3_size, out_dim)
-        
-#         if init_func is not None:
-#             init_func(self.l1.weight)
-#             init_func(self.l2.weight)
-#             init_func(self.l3.weight)
-#             init_func(self.l4.weight)
-        
-#         self.a1 = torch.nn.Sigmoid()
-#         self.a2 = torch.nn.Sigmoid()
-#         self.a3 = torch.nn.Sigmoid()
-        
-#     def forward(self, x_pred, z):
-#         """x_pred: No. of data points, by x_dim
-#         z: No. of samples, by z_dim
-#         """
-#         zs_reshaped = z.unsqueeze(-1).expand(z.shape[0], x_pred.shape[0]).transpose(0,1)
-#         xpred_reshaped = x_pred
-        
-#         xz = torch.cat([xpred_reshaped, zs_reshaped], dim=1)
-
-#         return self.l4(self.a3(self.l3(self.a2(self.l2(self.a1(self.l1(xz))))).squeeze(-1)))
-
 def MAE(pred, target):
-#     print(target.unsqueeze(2).shape)
-    pred = pred*scale_std_y + scale_mean_y
-    target = target*scale_std_y + scale_mean_y
     loss = torch.abs(pred-target.unsqueeze(2))
     return loss.mean()
 
@@ -242,45 +140,28 @@ class ConvEncoder(nn.Module):
     def __init__(self, image_channels):
         super().__init__()
         self.conv1 = nn.Sequential(
-            #input_shape = (2,32)
             nn.Conv1d(in_channels=image_channels, out_channels=init_channels, kernel_size = kernel_size,stride = 2),
             nn.ReLU(),
-#             nn.MaxPool2d(kernel_size = 2)
         )
         self.conv2 = nn.Sequential(
             nn.Conv1d(in_channels=init_channels, out_channels=init_channels*2, kernel_size = kernel_size,stride = 2),
             nn.ReLU(),
-#             nn.Dropout(p = .2),
-#             nn.MaxPool2d(kernel_size = 2)
         )
         self.conv3 = nn.Sequential(
             nn.Conv1d(in_channels=init_channels*2, out_channels=init_channels*4, kernel_size = kernel_size,stride = 2),
             nn.ReLU(),
-#             nn.MaxPool2d(kernel_size = 2)
         )
         self.conv4 = nn.Sequential(
             nn.Conv1d(in_channels=init_channels*4, out_channels=init_channels*8, kernel_size = kernel_size,stride = 2),
             nn.ReLU(),
-#             nn.MaxPool2d(kernel_size = 2)
         )
         self.output = nn.Sequential(
-            #start pushing back
-#             nn.Linear(256, 128),
-#             nn.ReLU(),
-#             nn.Dropout(p = .2),
             nn.Linear(32, conv_outDim)
         )
         
     def forward(self, x):
-        #x.to(torch.float32)
-#         print("input shape: ", x.shape)
-        #(2,30,30)
         x = self.conv1(x)
-       #print(x.shape)
-        #(64,124,252)
         x = self.conv2(x)
-        #print(x.shape)
-        #(64,21,42)
         x = self.conv3(x)
         x = self.conv4(x)
 #         print("x before reshape", x.shape)
@@ -302,30 +183,24 @@ class ConvDecoder(nn.Module):
     def __init__(self, in_dim, out_dim) :
         super().__init__()
         self.input = nn.Sequential(
-            #start pushing back
             nn.Linear(in_dim, conv_outDim),
             nn.ReLU()
         )
         self.conv1 = nn.Sequential(
             nn.ConvTranspose1d(in_channels=conv_outDim, out_channels=init_channels*8, kernel_size = kernel_size,stride = 2),
             nn.ReLU()
-#             nn.MaxPool2d(kernel_size = 2)
         )
         self.conv2 = nn.Sequential(
             nn.ConvTranspose1d(in_channels=init_channels*8, out_channels=init_channels*4, kernel_size = kernel_size,stride = 2),
             nn.ReLU()
-#             nn.Dropout(p = .2),
-#             nn.MaxPool2d(kernel_size = 3)
         )
         self.conv3 = nn.Sequential(
             nn.ConvTranspose1d(in_channels=init_channels*4, out_channels=init_channels*2, kernel_size = kernel_size,stride = 2),
             nn.ReLU()
-#             nn.MaxPool2d(kernel_size = 3)
         )
         self.conv4 = nn.Sequential(
             nn.ConvTranspose1d(in_channels=init_channels*2, out_channels=image_channels_in_decoder, kernel_size = kernel_size,stride = 2, output_padding = 1),
             nn.ReLU()
-#             nn.MaxPool2d(kernel_size = 3)
         )
 
         
@@ -333,12 +208,7 @@ class ConvDecoder(nn.Module):
         """x_pred: No. of data points, by x_dim
         z: No. of samples, by z_dim
         """
-#         zs_reshaped = z.unsqueeze(-1).expand(z.shape[0], x_pred.shape[0]).transpose(0,1)
-#         xpred_reshaped = x_pred
-#         print("zs shape: ", zs_reshaped.shape)
-#         print("xpred shape: ", xpred_reshaped.shape)
         
-#         xz = torch.cat([xpred_reshaped, zs_reshaped], dim=1)
         x = self.input(x_pred)
         x = x.view(-1, conv_outDim, 1)
         x = self.conv1(x)
@@ -359,15 +229,8 @@ class DCRNNModel(nn.Module):
         self.conv_encoder = ConvEncoder(image_channels_in_encoder)
         self.conv_encoder_in_decoder = ConvEncoder(image_channels_in_decoder)
         self.deconv = ConvDecoder(lstm_hidden_size, y_dim) # (x*, z) -> y*
-#         self.lstm_linear = nn.Sequential(
-# #             nn.Linear(conv_outDim, conv_reduction_dim+x_dim)
-#             nn.Linear(lstm_hidden_size, r_dim),
-#             nn.Sigmoid(),
-#             nn.Linear(r_dim, r_dim)
-#         )
         self.encoder_lstm = nn.LSTM(input_size = conv_outDim+x_dim, hidden_size = lstm_hidden_size, num_layers = 1, batch_first=True)
         self.decoder_lstm = nn.LSTM(input_size = conv_outDim+x_dim+z_dim, hidden_size = lstm_hidden_size, num_layers = 1, batch_first=True)
-#         self.repr_encoder = REncoder(x_dim+conv_outDim, r_dim) # (x,y)->r
         self.z_encoder = ZEncoder(lstm_hidden_size, z_dim) # r-> mu, logvar
         self.z_mu_all = 0
         self.z_logvar_all = 0
@@ -406,7 +269,6 @@ class DCRNNModel(nn.Module):
             xy = torch.cat([y_conv_c, x[i].repeat(len(y_stacked)).reshape(-1,x_dim)], dim=1)
 #             print("shape of xy: ", xy.shape)
             rs , encode_hidden_state = self.encoder_lstm(xy, encode_hidden_state)
-#             self.lstm_linear(rs)
             rs = rs.unsqueeze(0)
 #             print("shape of rs: ", rs.shape)
             if rs_all is None:
@@ -426,7 +288,6 @@ class DCRNNModel(nn.Module):
         else:
             eps = torch.autograd.Variable(logvar.data.new(n,z_dim).normal_()).to(device)
         
-        # std = torch.exp(0.5 * logvar)
         std = 0.1+ 0.9*torch.sigmoid(logvar)
 #         print(mu + std * eps)
         return mu + std * eps
@@ -451,17 +312,13 @@ class DCRNNModel(nn.Module):
         outputs = None
         encoded_states = None
         deconv_encoder_hidden_state = None
-#         theta_encoded = self.theta_fc_in_decoder(theta)
-#         print("shape of z_mu: ", z_mu.shape)
+
 
 
         
         for i in range(seq_len):
             # encode image to hidden (r)
             convEncoded = self.conv_encoder_in_decoder(prev_pred)
-            # conv_outDim -> 1, 4
-#             convEncoded = self.reduce_dm_decoder(convEncoded)
-    #         print(theta.shape)
 
             # append theta to every timestamp
             tempTensor = torch.empty(conv_outDim+x_dim+z_dim).to(device)
@@ -478,18 +335,10 @@ class DCRNNModel(nn.Module):
                 convEncoded = encoded_states            
         
 #             print(convEncoded.shape)
-            # 4+z_dim+x_dim
-
 
             output, deconv_encoder_hidden_state = self.decoder_lstm(convEncoded, deconv_encoder_hidden_state)
-    #             output = self.fc_conv_de_to_hidden(output[-1])
-            # end of convlstm in decoder
-    #         print("shape of output: ", output.shape)
 
 
-
-            #start of deconv
-    #             output = self.fc_deconv_de_to_hidden(output)
             # final image predicted
             outputs = self.deconv(output)
             outputs = outputs.unsqueeze(1)            
@@ -610,12 +459,6 @@ def train(n_epochs, x_train, y_train, x_val, y_val, x_test, y_test, n_display=50
                                 x_train, y_train, int(len(y_train)*0.2)) #0.25, 0.5, 0.05,0.015, 0.01
 #         print(x_context.shape, y_context.shape, x_target.shape, y_target.shape)    
 
-        # for overfitting use val as context, for actual training, use code above to split context!
-#         x_context = x_train
-#         y_context = y_train
-#         x_target  = x_train
-#         y_target  = y_train
-
         x_c = torch.from_numpy(x_context).float().to(device)
         x_t = torch.from_numpy(x_target).float().to(device)
         y_c = torch.from_numpy(y_context).float().to(device)
@@ -630,7 +473,7 @@ def train(n_epochs, x_train, y_train, x_val, y_val, x_test, y_test, n_display=50
 #         print("shape of y_t: ", y_t.shape)
 
         train_loss = MAE(y_pred, y_t) + dcrnn.KLD_gaussian()
-        mae_loss = MAE(y_pred, y_t) / scale_std_y
+        mae_loss = MAE(y_pred, y_t)
         kld_loss = dcrnn.KLD_gaussian()
         
         train_loss.backward()
@@ -642,11 +485,11 @@ def train(n_epochs, x_train, y_train, x_val, y_val, x_test, y_test, n_display=50
                       torch.from_numpy(x_val).float())
 #         print("shape of y_val_pred: ", y_val_pred.shape)
 #         print("shape of y_val: ", y_val.shape)
-        val_loss = MAE(torch.from_numpy(y_val_pred).float(),torch.from_numpy(y_val).float()) 
+        val_loss = MAE(torch.from_numpy(y_val_pred).float(),torch.from_numpy(y_val).float())
         #test loss
         y_test_pred = test(torch.from_numpy(x_train).float(),torch.from_numpy(y_train).float(),
                       torch.from_numpy(x_test).float())
-        test_loss = MAE(torch.from_numpy(y_test_pred).float(),torch.from_numpy(y_test).float()) 
+        test_loss = MAE(torch.from_numpy(y_test_pred).float(),torch.from_numpy(y_test).float())
 
         if t % n_display ==0:
             print('train loss:', train_loss.item(), 'mae:', mae_loss.item(), 'kld:', kld_loss.item(), flush=True)
@@ -663,12 +506,6 @@ def train(n_epochs, x_train, y_train, x_val, y_val, x_test, y_test, n_display=50
             train_losses.append(train_loss.item())
             val_losses.append(val_loss.item())
             test_losses.append(test_loss.item())
-#             mae_losses.append(mae_loss.item())
-#             kld_losses.append(kld_loss.item())
-        
-#         if train_loss.item() < 10:
-#             return train_losses, val_losses, test_losses, dcrnn.z_mu_all, dcrnn.z_logvar_all
-        
 #         #early stopping
         if val_loss < min_loss:
             wait = 0
@@ -687,10 +524,9 @@ def train(n_epochs, x_train, y_train, x_val, y_val, x_test, y_test, n_display=50
 
 
 r_dim = 64
-z_dim = 64 #8
-x_dim = 3 #
+z_dim = 64 
+x_dim = 3 
 y_dim = 1
-# N = 100000 #population
 
 ypred_allset = []
 ypred_testset = []
@@ -711,7 +547,7 @@ print(pytorch_total_params)
 
 
 dcrnn.train()
-train_losses, val_losses, test_losses, z_mu, z_logvar = train(10000,x_all,y_all,x_val, y_val, x_test, y_test,500, 1500) #20000, 5000
+train_losses, val_losses, test_losses, z_mu, z_logvar = train(10000,x_all,y_all,x_val, y_val, x_test, y_test,500, 2000) #20000, 5000
 
 
 # In[11]:

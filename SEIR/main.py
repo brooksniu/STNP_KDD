@@ -490,19 +490,16 @@ def MAE_MX(y_pred, y_test):
 beta_epsilon_all = beta_epsilon_train
 yall_set, yall_mean, yall_std = seir(num_days,beta_epsilon_all,num_simulations)
 y_all = yall_set.reshape(-1,100)
-print(y_all.shape)
 x_all = np.repeat(beta_epsilon_all,num_simulations,axis =0)
 
 
 yval_set, yval_mean, yval_std = seir(num_days,beta_epsilon_val,num_simulations)
 y_val = yval_set.reshape(-1,100)
-print(y_val.shape)
 x_val = np.repeat(beta_epsilon_val,num_simulations,axis =0)
 
 
 ytest_set, ytest_mean, ytest_std = seir(num_days,beta_epsilon_test,num_simulations)
 y_test = ytest_set.reshape(-1,100)
-print(y_test.shape)
 x_test = np.repeat(beta_epsilon_test,num_simulations,axis =0)
 
 np.random.seed(3)
@@ -530,71 +527,71 @@ mae_testset = []
 score_set = []
 mask_set = []
 
-seed = 43
-np.random.seed(seed)
-dcrnn = DCRNNModel(x_dim, y_dim, r_dim, z_dim).to(device)
-opt = torch.optim.Adam(dcrnn.parameters(), 1e-3) #1e-3
+for seed in range(1,3): #3
+    np.random.seed(seed)
+    dcrnn = DCRNNModel(x_dim, y_dim, r_dim, z_dim).to(device)
+    opt = torch.optim.Adam(dcrnn.parameters(), 1e-3) #1e-3
 
-y_pred_test_list = []
-y_pred_all_list = []
-all_mae_matrix_list = []
-all_mae_list = []
-test_mae_list = []
-score_list = []
-mask_list = []
+    y_pred_test_list = []
+    y_pred_all_list = []
+    all_mae_matrix_list = []
+    all_mae_list = []
+    test_mae_list = []
+    score_list = []
+    mask_list = []
 
-x_train,y_train = x_train_init, y_train_init
-# selected_mask = init()
-selected_mask = np.copy(mask_init)
-
-for i in range(8): #8
-    # print('selected_mask:', selected_mask)
-    print('training data shape:', x_train.shape, y_train.shape)
-    mask_list.append(np.copy(selected_mask))
-
-    train_losses, val_losses, test_losses, z_mu, z_logvar = train(20000,x_train,y_train,x_val, y_val, x_test, y_test,500, 1500) #20000, 5000
-    y_pred_test = test(torch.from_numpy(x_train).float(),torch.from_numpy(y_train).float(),
-                        torch.from_numpy(x_test).float())
-    y_pred_test_list.append(y_pred_test)
-
-    test_mae = N * MAE(torch.from_numpy(y_pred_test).float(),torch.from_numpy(y_test).float())/100
-    test_mae_list.append(test_mae.item())
-    print('Test MAE:',test_mae.item())
-
-    y_pred_all = test(torch.from_numpy(x_train).float(),torch.from_numpy(y_train).float(),
-                        torch.from_numpy(x_all).float())
-    y_pred_all_list.append(y_pred_all)
-    mae_matrix, mae = MAE_MX(y_pred_all, y_all)
+    x_train,y_train = x_train_init, y_train_init
+    # selected_mask = init()
+    selected_mask = np.copy(mask_init)
     
-    
-    all_mae_matrix_list.append(mae_matrix)
-    all_mae_list.append(mae)
-    print('All MAE:',mae)
-    mae_plot(mae_matrix, selected_mask,seed,i)
+    for i in range(8): #8
+        # print('selected_mask:', selected_mask)
+        print('training data shape:', x_train.shape, y_train.shape)
+        mask_list.append(np.copy(selected_mask))
 
-    score_array = calculate_score(x_train, y_train, beta_epsilon_all)
-    score_array = (score_array - np.min(score_array))/(np.max(score_array) - np.min(score_array))
-    
-    score_list.append(score_array)
-    score_plot(score_array, selected_mask,seed,i)
+        train_losses, val_losses, test_losses, z_mu, z_logvar = train(20000,x_train,y_train,x_val, y_val, x_test, y_test,500, 1500) #20000, 5000
+        y_pred_test = test(torch.from_numpy(x_train).float(),torch.from_numpy(y_train).float(),
+                          torch.from_numpy(x_test).float())
+        y_pred_test_list.append(y_pred_test)
 
-    x_train, y_train, selected_mask = select_data(x_train, y_train, beta_epsilon_all, yall_set, score_array, selected_mask)
+        test_mae = N * MAE(torch.from_numpy(y_pred_test).float(),torch.from_numpy(y_test).float())/100
+        test_mae_list.append(test_mae.item())
+        print('Test MAE:',test_mae.item())
 
-y_pred_all_arr = np.stack(y_pred_all_list,0)
-y_pred_test_arr = np.stack(y_pred_test_list,0)
-all_mae_matrix_arr = np.stack(all_mae_matrix_list,0)
-all_mae_arr = np.stack(all_mae_list,0)
-test_mae_arr = np.stack(test_mae_list,0)
-score_arr = np.stack(score_list,0)
-mask_arr = np.stack(mask_list,0)
+        y_pred_all = test(torch.from_numpy(x_train).float(),torch.from_numpy(y_train).float(),
+                          torch.from_numpy(x_all).float())
+        y_pred_all_list.append(y_pred_all)
+        mae_matrix, mae = MAE_MX(y_pred_all, y_all)
+        
+        
+        all_mae_matrix_list.append(mae_matrix)
+        all_mae_list.append(mae)
+        print('All MAE:',mae)
+        mae_plot(mae_matrix, selected_mask,seed,i)
 
-ypred_allset.append(y_pred_all_arr)
-ypred_testset.append(y_pred_test_arr)
-maemetrix_allset.append(all_mae_matrix_arr)
-mae_allset.append(all_mae_arr)
-mae_testset.append(test_mae_arr)
-score_set.append(score_arr)
-mask_set.append(mask_arr)
+        score_array = calculate_score(x_train, y_train, beta_epsilon_all)
+        score_array = (score_array - np.min(score_array))/(np.max(score_array) - np.min(score_array))
+        
+        score_list.append(score_array)
+        score_plot(score_array, selected_mask,seed,i)
+
+        x_train, y_train, selected_mask = select_data(x_train, y_train, beta_epsilon_all, yall_set, score_array, selected_mask)
+
+    y_pred_all_arr = np.stack(y_pred_all_list,0)
+    y_pred_test_arr = np.stack(y_pred_test_list,0)
+    all_mae_matrix_arr = np.stack(all_mae_matrix_list,0)
+    all_mae_arr = np.stack(all_mae_list,0)
+    test_mae_arr = np.stack(test_mae_list,0)
+    score_arr = np.stack(score_list,0)
+    mask_arr = np.stack(mask_list,0)
+
+    ypred_allset.append(y_pred_all_arr)
+    ypred_testset.append(y_pred_test_arr)
+    maemetrix_allset.append(all_mae_matrix_arr)
+    mae_allset.append(all_mae_arr)
+    mae_testset.append(test_mae_arr)
+    score_set.append(score_arr)
+    mask_set.append(mask_arr)
 
 ypred_allarr = np.stack(ypred_allset,0)
 ypred_testarr = np.stack(ypred_testset,0) 

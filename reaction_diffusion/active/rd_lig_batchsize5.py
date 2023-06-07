@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
 
+# In[8]:
+
 
 import numpy as np
 from numpy.random import binomial
@@ -15,19 +17,19 @@ from sklearn.gaussian_process.kernels import (RBF, Matern, RationalQuadratic,
 import torch.nn as nn
 from sklearn import preprocessing
 from scipy.stats import multivariate_normal
-from collections import defaultdict
-
-# In[25]:
 
 
-device = torch.device("cuda:2")
-seed = 42
+# In[9]:
+
+
+device = torch.device("cuda:1")
+seed = 31
 torch.manual_seed(seed)
 np.random.seed(seed)
 # device
 
 
-# In[26]:
+# In[10]:
 
 
 large = 25; med = 19; small = 12
@@ -43,31 +45,55 @@ plt.rcParams.update(params)
 
 # # Load Data:
 
-# In[27]:
+# In[94]:
 
 
-x_all = np.load("../data/x_train.npy")
+x_all = np.load("../data/x_all.npy")
 x_val = np.load("../data/x_val.npy")
 x_test = np.load("../data/x_test.npy")
-y_all = np.load("../data/y_train.npy").reshape(384,32,1,32)
-y_val = np.load("../data/y_val.npy").reshape(64,32,1,32)
-y_test = np.load("../data/y_test.npy").reshape(64,32,1,32)
-y_all = y_all[:,::8,...]
-y_val = y_val[:,::8,...]
-y_test = y_test[:,::8,...]
-initial = np.load("../data/initial_pic.npy").reshape(1,32)
+y_all = np.load("../data/y_all.npy")
+y_val = np.load("../data/y_val.npy")
+y_test = np.load("../data/y_test.npy")
 # print(y_test)
 
 
+# In[12]:
 
 
-
-print(y_all.shape)
-print(y_val.shape)
-print(y_test.shape)
+# print(x_all)
 
 
-from datetime import datetime
+# In[13]:
+
+
+# print(np.array(y_all).shape)
+# for elem in y_all:
+#     for sim in elem:
+#         draw(sim[0], sim[1])
+
+
+# In[14]:
+
+
+# # replace beta_epsilon_all with fkAB to initiate the mask!
+# mask_init = np.zeros(len(x_all))
+# mask_init[:8] = 1
+
+# np.random.shuffle(mask_init)
+# x_train_init = x_all[mask_init.astype('bool')]
+# print(x_train_init)
+
+# # use the selected fkAB values to select their corresponding data
+# y_train_init = np.array(y_all)[mask_init.astype('bool')]
+# # selected_y.shape[2]*selected_y.shape[3]*selected_y.shape[4] : 50 * 2 * 30 * 30
+# # each data point for y with the timestamp info included: 2(A and B) ,(32 , 32) <- pixels 
+# print(x_train_init.shape, y_train_init.shape)
+# print(mask_init)
+
+
+# # CNP
+
+# In[15]:
 
 
 #reference: https://chrisorm.github.io/NGP.html
@@ -76,9 +102,9 @@ class REncoder(torch.nn.Module):
     
     def __init__(self, in_dim, out_dim, init_func = torch.nn.init.normal_):
         super(REncoder, self).__init__()
-        self.l1_size = 64 
-        self.l2_size = 32
-        self.l3_size = 16 
+        self.l1_size = 64 #16
+        self.l2_size = 32 #8
+        self.l3_size = 16 #DNE
         
         self.l1 = torch.nn.Linear(in_dim, self.l1_size)
         self.l2 = torch.nn.Linear(self.l1_size, self.l2_size)
@@ -117,84 +143,145 @@ class ZEncoder(torch.nn.Module):
 
         return self.m1(inputs), self.logvar1(inputs)
 
+"""Original Decoder implementation without convolutional layer"""
+# class Decoder(torch.nn.Module):
+#     """
+#     Takes the x star points, along with a 'function encoding', z, and makes predictions.
+#     """
+#     def __init__(self, in_dim, out_dim, init_func=torch.nn.init.normal_):
+#         super(Decoder, self).__init__()
+#         self.l1_size = 16 #8
+#         self.l2_size = 32 #16
+#         self.l3_size = 64 #DNE
+        
+#         self.l1 = torch.nn.Linear(in_dim, self.l1_size)
+#         self.l2 = torch.nn.Linear(self.l1_size, self.l2_size)
+#         self.l3 = torch.nn.Linear(self.l2_size, self.l3_size)
+#         self.l4 = torch.nn.Linear(self.l3_size, out_dim)
+        
+#         if init_func is not None:
+#             init_func(self.l1.weight)
+#             init_func(self.l2.weight)
+#             init_func(self.l3.weight)
+#             init_func(self.l4.weight)
+        
+#         self.a1 = torch.nn.Sigmoid()
+#         self.a2 = torch.nn.Sigmoid()
+#         self.a3 = torch.nn.Sigmoid()
+        
+#     def forward(self, x_pred, z):
+#         """x_pred: No. of data points, by x_dim
+#         z: No. of samples, by z_dim
+#         """
+#         zs_reshaped = z.unsqueeze(-1).expand(z.shape[0], x_pred.shape[0]).transpose(0,1)
+#         xpred_reshaped = x_pred
+        
+#         xz = torch.cat([xpred_reshaped, zs_reshaped], dim=1)
+
+#         return self.l4(self.a3(self.l3(self.a2(self.l2(self.a1(self.l1(xz))))).squeeze(-1)))
+
 def MAE(pred, target):
-    loss = torch.abs(pred-target.unsqueeze(2))
+#     print(target.unsqueeze(2).shape)
+    loss = torch.abs(pred-(target.unsqueeze(2)[:,1:,...]))
     return loss.mean()
 
 
-# In[32]:
+# In[16]:
 
 
 conv_outDim = 64
 init_channels = 4
-image_channels_in_encoder = 2
-image_channels_in_decoder = 1
+image_channels_in_encoder = 4
+image_channels_in_decoder = 2
 kernel_size = 3
-lstm_hidden_size = 64
-decoder_init = torch.from_numpy(initial).float().to(device)
+lstm_hidden_size = 128
+decoder_init = torch.unsqueeze(torch.from_numpy(np.load("../data/initial_pic.npy")).float().to(device), 0)
 
 class ConvEncoder(nn.Module):
     def __init__(self, image_channels):
         super().__init__()
         self.conv1 = nn.Sequential(
-            nn.Conv1d(in_channels=image_channels, out_channels=init_channels, kernel_size = kernel_size,stride = 2),
+            #input_shape = (2,30,30)
+            nn.Conv2d(in_channels=image_channels, out_channels=init_channels, kernel_size = kernel_size,stride = 2),
             nn.ReLU(),
+#             nn.MaxPool2d(kernel_size = 2)
         )
         self.conv2 = nn.Sequential(
-            nn.Conv1d(in_channels=init_channels, out_channels=init_channels*2, kernel_size = kernel_size,stride = 2),
+            nn.Conv2d(in_channels=init_channels, out_channels=init_channels*2, kernel_size = kernel_size,stride = 2),
             nn.ReLU(),
+#             nn.Dropout(p = .2),
+#             nn.MaxPool2d(kernel_size = 2)
         )
         self.conv3 = nn.Sequential(
-            nn.Conv1d(in_channels=init_channels*2, out_channels=init_channels*4, kernel_size = kernel_size,stride = 2),
+            nn.Conv2d(in_channels=init_channels*2, out_channels=init_channels*4, kernel_size = kernel_size,stride = 2),
             nn.ReLU(),
+#             nn.MaxPool2d(kernel_size = 2)
         )
         self.conv4 = nn.Sequential(
-            nn.Conv1d(in_channels=init_channels*4, out_channels=init_channels*8, kernel_size = kernel_size,stride = 2),
+            nn.Conv2d(in_channels=init_channels*4, out_channels=init_channels*8, kernel_size = kernel_size,stride = 2),
             nn.ReLU(),
+#             nn.MaxPool2d(kernel_size = 2)
         )
         self.output = nn.Sequential(
+            #start pushing back
+#             nn.Linear(256, 128),
+#             nn.ReLU(),
+#             nn.Dropout(p = .2),
             nn.Linear(32, conv_outDim)
         )
         
     def forward(self, x):
+        #x.to(torch.float32)
+#         print("input shape: ", x.shape)
+        #(2,30,30)
         x = self.conv1(x)
+       #print(x.shape)
+        #(64,124,252)
         x = self.conv2(x)
+        #print(x.shape)
+        #(64,21,42)
         x = self.conv3(x)
         x = self.conv4(x)
-        if (x.ndim == 2):
-            x = x.view(x.size(0))
-        else:
-            x = x.view(x.size(0), -1)
+#         print("x before reshape", x.shape)
+        x = x.view(x.size(0), -1)
+#         print("x after reshape: ", x.shape)
         output = self.output(x)
+#         print("shape of encoder output: ", output.shape)
         
         return output
 
 
-# In[33]:
+# In[17]:
 
 
 class ConvDecoder(nn.Module):
     def __init__(self, in_dim, out_dim) :
         super().__init__()
         self.input = nn.Sequential(
+            #start pushing back
             nn.Linear(in_dim, conv_outDim),
             nn.ReLU()
         )
         self.conv1 = nn.Sequential(
-            nn.ConvTranspose1d(in_channels=conv_outDim, out_channels=init_channels*8, kernel_size = kernel_size,stride = 2),
+            nn.ConvTranspose2d(in_channels=conv_outDim, out_channels=init_channels*8, kernel_size = kernel_size,stride = 2),
             nn.ReLU()
+#             nn.MaxPool2d(kernel_size = 2)
         )
         self.conv2 = nn.Sequential(
-            nn.ConvTranspose1d(in_channels=init_channels*8, out_channels=init_channels*4, kernel_size = kernel_size,stride = 2),
+            nn.ConvTranspose2d(in_channels=init_channels*8, out_channels=init_channels*4, kernel_size = kernel_size,stride = 2),
             nn.ReLU()
+#             nn.Dropout(p = .2),
+#             nn.MaxPool2d(kernel_size = 3)
         )
         self.conv3 = nn.Sequential(
-            nn.ConvTranspose1d(in_channels=init_channels*4, out_channels=init_channels*2, kernel_size = kernel_size,stride = 2),
+            nn.ConvTranspose2d(in_channels=init_channels*4, out_channels=init_channels*2, kernel_size = kernel_size,stride = 2),
             nn.ReLU()
+#             nn.MaxPool2d(kernel_size = 3)
         )
         self.conv4 = nn.Sequential(
-            nn.ConvTranspose1d(in_channels=init_channels*2, out_channels=image_channels_in_decoder, kernel_size = kernel_size,stride = 2, output_padding = 1),
+            nn.ConvTranspose2d(in_channels=init_channels*2, out_channels=image_channels_in_decoder, kernel_size = kernel_size,stride = 2, output_padding = 1),
             nn.ReLU()
+#             nn.MaxPool2d(kernel_size = 3)
         )
 
         
@@ -202,8 +289,14 @@ class ConvDecoder(nn.Module):
         """x_pred: No. of data points, by x_dim
         z: No. of samples, by z_dim
         """
+#         zs_reshaped = z.unsqueeze(-1).expand(z.shape[0], x_pred.shape[0]).transpose(0,1)
+#         xpred_reshaped = x_pred
+#         print("zs shape: ", zs_reshaped.shape)
+#         print("xpred shape: ", xpred_reshaped.shape)
+        
+#         xz = torch.cat([xpred_reshaped, zs_reshaped], dim=1)
         x = self.input(x_pred)
-        x = x.view(-1, conv_outDim, 1)
+        x = x.view(-1, conv_outDim, 1, 1)
         x = self.conv1(x)
         x = self.conv2(x)
         x = self.conv3(x)
@@ -213,7 +306,7 @@ class ConvDecoder(nn.Module):
         return output
 
 
-# In[34]:
+# In[18]:
 
 
 class DCRNNModel(nn.Module):
@@ -222,8 +315,15 @@ class DCRNNModel(nn.Module):
         self.conv_encoder = ConvEncoder(image_channels_in_encoder)
         self.conv_encoder_in_decoder = ConvEncoder(image_channels_in_decoder)
         self.deconv = ConvDecoder(lstm_hidden_size, y_dim) # (x*, z) -> y*
+#         self.lstm_linear = nn.Sequential(
+# #             nn.Linear(conv_outDim, conv_reduction_dim+x_dim)
+#             nn.Linear(lstm_hidden_size, r_dim),
+#             nn.Sigmoid(),
+#             nn.Linear(r_dim, r_dim)
+#         )
         self.encoder_lstm = nn.LSTM(input_size = conv_outDim+x_dim, hidden_size = lstm_hidden_size, num_layers = 1, batch_first=True)
         self.decoder_lstm = nn.LSTM(input_size = conv_outDim+x_dim+z_dim, hidden_size = lstm_hidden_size, num_layers = 1, batch_first=True)
+#         self.repr_encoder = REncoder(x_dim+conv_outDim, r_dim) # (x,y)->r
         self.z_encoder = ZEncoder(lstm_hidden_size, z_dim) # r-> mu, logvar
         self.z_mu_all = 0
         self.z_logvar_all = 0
@@ -233,15 +333,17 @@ class DCRNNModel(nn.Module):
         self.zdim = z_dim
         self.xdim = x_dim
         self.y_init = decoder_init
+#         self.reduce_dm_decoder = nn.Linear(conv_outDim, conv_reduction_dim)
+#         self.reduce_dm_encoder = nn.Linear(conv_outDim, conv_reduction_dim)
         
     # stack x0...xt-1 and x1...xt (seq_len-1, 2,32,32) -> (seq_len-1, 4 ,32,32)
     def stack_y(self, y):
-#         print("shape of y:", y.shape)
         # x0 -> xt-1
-        seq1 = np.insert(y.cpu(), 0, initial, axis = 0)[:-1].to(device)
-#         print("y before stacking: ", seq1.shape)
+        seq1 = y[:-1]
+        # print("x before stacking: ", seq1.shape)
         # x1 -> xt
-        seq3 = torch.cat((seq1, y), 1)
+        seq2 = y[1:]
+        seq3 = torch.cat((seq1, seq2), 1)
 #         print("y after stacking: ", seq3.shape)
         return seq3
     
@@ -249,9 +351,7 @@ class DCRNNModel(nn.Module):
         """Helper to batch together some steps of the process."""
         rs_all = None
         for i,theta_seq in enumerate(y):
-#             print("shape of data: ", y.shape)
             y_stacked = self.stack_y(theta_seq)
-#             print(y_stacked.shape)
             y_conv_c = self.conv_encoder(y_stacked)
             encode_hidden_state = None
 #             print(y_conv_c.shape)
@@ -260,6 +360,7 @@ class DCRNNModel(nn.Module):
             xy = torch.cat([y_conv_c, x[i].repeat(len(y_stacked)).reshape(-1,x_dim)], dim=1)
 #             print("shape of xy: ", xy.shape)
             rs , encode_hidden_state = self.encoder_lstm(xy, encode_hidden_state)
+#             self.lstm_linear(rs)
             rs = rs.unsqueeze(0)
 #             print("shape of rs: ", rs.shape)
             if rs_all is None:
@@ -279,6 +380,7 @@ class DCRNNModel(nn.Module):
         else:
             eps = torch.autograd.Variable(logvar.data.new(n,z_dim).normal_()).to(device)
         
+        # std = torch.exp(0.5 * logvar)
         std = 0.1+ 0.9*torch.sigmoid(logvar)
 #         print(mu + std * eps)
         return mu + std * eps
@@ -294,7 +396,7 @@ class DCRNNModel(nn.Module):
         return torch.distributions.kl_divergence(q, p).sum()
     
     # decoder for the model, need zs(array of [[mean], [var]], length is seq_length)
-    def decoder(self, theta, z_mu, z_log, seq_len=4, prev_pred = None):
+    def decoder(self, theta, z_mu, z_log, seq_len=5, prev_pred = None):
         # initialize prev_pred
         # if not training, get a initial pic!
         if (prev_pred is None):
@@ -303,6 +405,7 @@ class DCRNNModel(nn.Module):
         outputs = None
         encoded_states = None
         deconv_encoder_hidden_state = None
+#         theta_encoded = self.theta_fc_in_decoder(theta)
 #         print("shape of z_mu: ", z_mu.shape)
 
 
@@ -311,6 +414,7 @@ class DCRNNModel(nn.Module):
             # encode image to hidden (r)
             convEncoded = self.conv_encoder_in_decoder(prev_pred)
             # conv_outDim -> 1, 4
+#             convEncoded = self.reduce_dm_decoder(convEncoded)
     #         print(theta.shape)
 
             # append theta to every timestamp
@@ -327,23 +431,27 @@ class DCRNNModel(nn.Module):
                 encoded_states = torch.vstack((encoded_states, tempTensor))
                 convEncoded = encoded_states            
         
-#             print(convEncoded.shape)
+    #         print(convEncoded.shape)
             # 4+z_dim+x_dim
 
 
             output, deconv_encoder_hidden_state = self.decoder_lstm(convEncoded, deconv_encoder_hidden_state)
+    #             output = self.fc_conv_de_to_hidden(output[-1])
             # end of convlstm in decoder
     #         print("shape of output: ", output.shape)
 
 
 
             #start of deconv
+    #             output = self.fc_deconv_de_to_hidden(output)
             # final image predicted
             outputs = self.deconv(output)
             outputs = outputs.unsqueeze(1)            
             # update prev_pred to the prediction
             prev_pred = outputs[-1]
 #             print("outputs shape: ", outputs.shape)
+    #         outputs.append(output)
+    #         outputs = torch.stack(outputs, dim=0)
     #         print("shape of final output: ", output.shape)
             
         return outputs
@@ -361,11 +469,13 @@ class DCRNNModel(nn.Module):
             output = self.decoder(target, self.z_mu_all, self.z_logvar_all)
             outputs.append(output)
         outputs = torch.stack(outputs, dim=0)
+#         self.zs = self.sample_z(self.z_mu_all, self.z_logvar_all)
+#         print("shape of zs: ", self.zs.shape)
         return outputs
     
 
 
-# In[35]:
+# In[19]:
 
 
 # all good, no additional modification needed
@@ -390,6 +500,8 @@ def data_to_z_params(x, y, calc_score = False):
     """Helper to batch together some steps of the process."""
     rs_all = None
     for i,theta_seq in enumerate(y):
+        if calc_score:
+            theta_seq = torch.cat([decoder_init, theta_seq])
         y_stacked = dcrnn.stack_y(theta_seq)
         y_conv_c = dcrnn.conv_encoder(y_stacked)
         encode_hidden_state = None
@@ -399,7 +511,9 @@ def data_to_z_params(x, y, calc_score = False):
         xy = torch.cat([y_conv_c, x[i].repeat(len(y_stacked)).reshape(-1,x_dim)], dim=1)
 #             print("shape of xy: ", xy.shape)
         rs , encode_hidden_state = dcrnn.encoder_lstm(xy, encode_hidden_state)
+#             self.lstm_linear(rs)
         rs = rs.unsqueeze(0)
+#             print("shape of rs: ", rs.shape)
         if rs_all is None:
             rs_all = rs
         else:
@@ -416,6 +530,7 @@ def test(x_train, y_train, x_test):
       
         output_list = None
         for i in range (len(x_test)):
+        #           zsamples = sample_z(z_mu, z_logvar) 
             output = dcrnn.decoder(x_test[i:i+1].to(device), z_mu, z_logvar).cpu().unsqueeze(0)
             if output_list is None:
                 output_list = output.detach()
@@ -425,7 +540,7 @@ def test(x_train, y_train, x_test):
     return output_list.numpy()
 
 
-# In[36]:
+# In[84]:
 
 
 def train(n_epochs, x_train, y_train, x_val, y_val, x_test, y_test, n_display=500, patience = 5000): #7000, 1000
@@ -448,6 +563,12 @@ def train(n_epochs, x_train, y_train, x_val, y_val, x_test, y_test, n_display=50
         x_context, y_context, x_target, y_target = random_split_context_target(
                                 x_train, y_train, int(len(y_train)*0.2)) #0.25, 0.5, 0.05,0.015, 0.01
 #         print(x_context.shape, y_context.shape, x_target.shape, y_target.shape)    
+
+        # for overfitting use val as context, for actual training, use code above to split context!
+#         x_context = x_train
+#         y_context = y_train
+#         x_target  = x_train
+#         y_target  = y_train
 
         x_c = torch.from_numpy(x_context).float().to(device)
         x_t = torch.from_numpy(x_target).float().to(device)
@@ -484,11 +605,6 @@ def train(n_epochs, x_train, y_train, x_val, y_val, x_test, y_test, n_display=50
         if t % n_display ==0:
             print('train loss:', train_loss.item(), 'mae:', mae_loss.item(), 'kld:', kld_loss.item(), flush=True)
             print('val loss:', val_loss.item(), 'test loss:', test_loss.item(), flush=True)
-            
-            now = datetime.now()
-            current_time = now.strftime("%H:%M:%S")
-            print("Current Time =", current_time, flush=True)
-            
             ypred_allset.append(y_pred)
 #             print(y_train)
 
@@ -496,6 +612,12 @@ def train(n_epochs, x_train, y_train, x_val, y_val, x_test, y_test, n_display=50
             train_losses.append(train_loss.item())
             val_losses.append(val_loss.item())
             test_losses.append(test_loss.item())
+#             mae_losses.append(mae_loss.item())
+#             kld_losses.append(kld_loss.item())
+        
+#         if train_loss.item() < 10:
+#             return train_losses, val_losses, test_losses, dcrnn.z_mu_all, dcrnn.z_logvar_all
+        
 #         #early stopping
         if val_loss < min_loss:
             wait = 0
@@ -510,38 +632,34 @@ def train(n_epochs, x_train, y_train, x_val, y_val, x_test, y_test, n_display=50
     return train_losses, val_losses, test_losses, dcrnn.z_mu_all, dcrnn.z_logvar_all
 
 
-# In[74]:
+# In[85]:
 
 
-r_dim = 64
-z_dim = 64 #8
-x_dim = 3 #
-y_dim = 1
-# N = 100000 #population
+# # pass in fkAB as beta_epsilon_all
+# def select_data(x_train, y_train, beta_epsilon_all, yall_set, score_array, selected_mask, select_size):
 
-ypred_allset = []
-ypred_testset = []
-mae_allset = []
-maemetrix_allset = []
-mae_testset = []
-score_set = []
-mask_set = []
-y_pred_test_list = []
-test_mae_list = []
-y_pred_all_list = []
-#number of parameters
-dcrnn = DCRNNModel(x_dim, y_dim, r_dim, z_dim).to(device)
-opt = torch.optim.Adam(dcrnn.parameters(), 1e-3) #1e-3
-pytorch_total_params = sum(p.numel() for p in dcrnn.parameters() if p.requires_grad)
-print(pytorch_total_params)
+#     # make sure it does not select selected element
+#     # mask: [0,1,1,0,0,1]
+#     # 1- 2*mask: [1,-1,-1,1,1,-1]
+#     mask_score_array = score_array*(1-selected_mask)
+#     # print('mask_score_array',mask_score_array)
+#     select_index = np.argpartition(mask_score_array, -select_size)[-select_size:]
+#     print('select_index:',select_index)
 
+#     # beta_epsilon_all: x_all
+#     selected_x = beta_epsilon_all[select_index]
+#     selected_y = yall_set[select_index]
 
-
-
-
-
-# In[44]:
-
+#     x_train = np.concatenate([x_train, selected_x],0)
+    
+#     y_train1 = selected_y
+#     print("selected y shape: ", y_train1.shape)
+#     y_train = np.concatenate([y_train, y_train1],0)
+#     print("y after concatenation: ", y_train.shape)
+ 
+#     selected_mask[select_index] = 1
+    
+#     return x_train, y_train, selected_mask
 
 # takes in x and y data, generate two sets, one is x and y in batch, the other is x and y removed from all data
 # returns selected x, selected y, rest of dataset x, rest of dataset y
@@ -580,7 +698,7 @@ def calculate_score(x_train, y_train, x_search):
 #         print("shape of x_search: ", x_search.shape)
 
         x_search_all = torch.cat([x_train.to(device),x_search.to(device)],dim=0)
-        y_search_all = torch.cat([y_train.to(device),y_search],dim=0)
+        y_search_all = torch.cat([y_train[:,1:,...].to(device),y_search],dim=0)
         
 #         print("shape of y_search_all: ", y_search_all.shape)
 #         print("shape of x_search_all: ", x_search_all.shape)
@@ -603,19 +721,156 @@ def calculate_score(x_train, y_train, x_search):
 
 
 
-# In[45]:
+
+# BO search:
+
+# In[87]:
 
 
-x_train = np.load('x_train_initial.npy')[:5]
-y_train = np.load('y_train_initial.npy')[:5]
-search_data_x = np.load('search_data_x_initial.npy')
-search_data_y = np.load('search_data_y_initial.npy')
+# TODO: replace np.linespace with our correct ones for reaction diffusion data
+def mae_plot(mae, selected_mask):
+    epsilon, beta  = np.meshgrid(np.linspace(0.25, 0.7, 10), np.linspace(1.1, 4.1, 31))
+    selected_mask = selected_mask.reshape(30,9)
+    mae_min, mae_max = 0, 1200
 
-for i in range(9): #8
+    fig, ax = plt.subplots(figsize=(16, 5))
+    # f, (y1_ax) = plt.subplots(1, 1, figsize=(16, 10))
+
+    c = ax.pcolormesh(beta-0.05, epsilon-0.025, mae, cmap='binary', vmin=mae_min, vmax=mae_max)
+    ax.set_title('MAE Mesh')
+    # set the limits of the plot to the limits of the data
+    ax.axis([beta.min()-0.05, beta.max()-0.05, epsilon.min()-0.025, epsilon.max()-0.025])
+    x,y = np.where(selected_mask==1)
+    x = x*0.1+1.1
+    y = y*0.05+0.25
+    ax.plot(x, y, 'r*', markersize=15)
+    fig.colorbar(c, ax=ax)
+    ax.set_xlabel('Beta')
+    ax.set_ylabel('Epsilon')
+    plt.show()
+
+def score_plot(score, selected_mask):
+    epsilon, beta  = np.meshgrid(np.linspace(0.25, 0.7, 10), np.linspace(1.1, 4.1, 31))
+    score_min, score_max = 0, 1
+    selected_mask = selected_mask.reshape(30,9)
+    score = score.reshape(30,9)
+    fig, ax = plt.subplots(figsize=(16, 5))
+    # f, (y1_ax) = plt.subplots(1, 1, figsize=(16, 10))
+
+    c = ax.pcolormesh(beta-0.05, epsilon-0.025, score, cmap='binary', vmin=score_min, vmax=score_max)
+    ax.set_title('Score Mesh')
+    # set the limits of the plot to the limits of the data
+    ax.axis([beta.min()-0.05, beta.max()-0.05, epsilon.min()-0.025, epsilon.max()-0.025])
+    x,y = np.where(selected_mask==1)
+    x = x*0.1+1.1
+    y = y*0.05+0.25
+    ax.plot(x, y, 'r*', markersize=15)
+    fig.colorbar(c, ax=ax)
+    ax.set_xlabel('Beta')
+    ax.set_ylabel('Epsilon')
+    plt.show()
+
+
+
+
+# In[88]:
+
+
+def MAE_MX(y_pred, y_test):
+    y_pred = y_pred.reshape(160, 5, 2, 32, 32)
+    y_test = y_test[:,1:,...].reshape(160, 5, 2, 32, 32)
+    mae_matrix = np.mean(np.abs(y_pred - y_test),axis=(2,3,4))
+    mae = np.mean(np.abs(y_pred - y_test))
+    return mae_matrix, mae
+
+
+# In[89]:
+
+
+# beta = np.repeat(np.expand_dims(np.linspace(1.1, 4., 30),1),9,1)
+# epsilon = np.repeat(np.expand_dims(np.linspace(0.25, 0.65, 9),0),30,0)
+# beta_epsilon = np.stack([beta,epsilon],-1)
+# beta_epsilon_flatten_test = beta_epsilon.reshape(-1,2)
+
+# ytest_set, ytest_mean, ytest_std = seir(num_days,beta_epsilon_flatten_test,num_simulations)
+# print(beta_epsilon_flatten_test.shape)
+# print(ytest_set.shape)
+# print(ytest_mean.shape)
+# print(ytest_std.shape)
+
+# x_test = np.repeat(beta_epsilon_flatten_test,num_simulations,axis =0)
+# y_test = ytest_set.reshape(-1,100)
+# print(x_test.shape, y_test.shape)
+
+
+# In[90]:
+
+
+r_dim = 64
+z_dim = 64 #8
+x_dim = 2 #
+y_dim = 2 
+# N = 100000 #population
+
+
+# # Offline
+
+# In[91]:
+
+
+# ypred_allset = []
+# ypred_testset = []
+# mae_allset = []
+# maemetrix_allset = []
+# mae_testset = []
+# score_set = []
+# mask_set = []
+
+# #number of parameters
+# decoder_init = torch.unsqueeze(torch.from_numpy(np.load("initial_pic.npy")).float().to(device), 0)
+# print(decoder_init.shape)
+# dcrnn = DCRNNModel(x_dim, y_dim, r_dim, z_dim).to(device)
+# opt = torch.optim.Adam(dcrnn.parameters(), 1e-3) #1e-3
+# pytorch_total_params = sum(p.numel() for p in dcrnn.parameters() if p.requires_grad)
+# print(pytorch_total_params)
+
+
+# # Active Learning
+
+# In[92]:
+
+
+ypred_allset = []
+ypred_testset = []
+mae_allset = []
+maemetrix_allset = []
+mae_testset = []
+score_set = []
+# save the value for all y_train
+yall_set = np.array(y_all)
+print(yall_set.shape)
+
+decoder_init = torch.unsqueeze(torch.from_numpy(np.load("../data/initial_pic.npy")).float().to(device), 0)
+dcrnn = DCRNNModel(x_dim, y_dim, r_dim, z_dim).to(device)
+opt = torch.optim.Adam(dcrnn.parameters(), 1e-3) #1e-3
+
+y_pred_test_list = []
+y_pred_all_list = []
+all_mae_matrix_list = []
+all_mae_list = []
+test_mae_list = []
+score_list = []
+
+# get initial choices of data
+# batch size is 8
+x_train,y_train, search_data_x, search_data_y = generate_batch(x_all, y_all, 5)
+
+
+for i in range(10): #8
     dcrnn.train()
     print('training data shape:', x_train.shape, y_train.shape, flush=True)
 
-    train_losses, val_losses, test_losses, z_mu, z_logvar = train(5000,x_train,y_train,x_val, y_val, x_test, y_test,500, 1000) #20000, 5000
+    train_losses, val_losses, test_losses, z_mu, z_logvar = train(20000,x_train,y_train,x_val, y_val, x_test, y_test,500, 1500) #20000, 5000
     y_pred_test = test(torch.from_numpy(x_train).float(),torch.from_numpy(y_train).float(),
                       torch.from_numpy(x_test).float())
 #     print("y_pred_shape: ", y_pred_test.shape)
@@ -630,6 +885,12 @@ for i in range(9): #8
                       torch.from_numpy(x_all).float())
 #     print("shape of y_pred_all: ", y_pred_all.shape)
     y_pred_all_list.append(y_pred_all)
+    mae_matrix, mae = MAE_MX(y_pred_all, y_all)
+
+
+    all_mae_matrix_list.append(mae_matrix)
+    all_mae_list.append(mae)
+    print('All MAE:',mae, flush=True)
 
     
     reward_list = []
@@ -640,7 +901,14 @@ for i in range(9): #8
         search_data_x_batch = np.stack([search_data_x[i] for i in index],0)
 #         print("shape of search_data_y_all: ", search_data_y_all.shape)
         reward = calculate_score(x_train, y_train, search_data_x_batch)
-        reward_list.append(reward.item())  
+        reward_list.append(reward.item())
+    
+    # np.save('seed%d_reward_list_itr%d.npy' % (seed, i+1),np.array(reward_list))
+    # np.save('seed%d_index_list_itr%d.npy' % (seed, i+1),np.stack(index_list))
+    # torch.save(dcrnn.state_dict(), '5_seq_20by8_theta_stacked_y_stnp_64_rdim_2_theta_active_learning_seed%d_itr%d.pt' % (seed, i+1))
+    # np.save('seed%d_test_mae_list_itr%d.npy' % (seed, i+1),np.stack(test_mae_list))    
+    # np.save('seed%d_all_mae_matrix_list_itr%d.npy' % (seed, i+1),np.stack(all_mae_matrix_list))    
+    # np.save('seed%d_all_mae_list_itr%d.npy' % (seed, i+1),np.stack(all_mae_list))  
 
 #     print('reward_list:',reward_list)
     selected_ind = np.argmax(np.array(reward_list))
@@ -654,15 +922,119 @@ for i in range(9): #8
 
 y_pred_all_arr = np.stack(y_pred_all_list,0)
 y_pred_test_arr = np.stack(y_pred_test_list,0)
+all_mae_matrix_arr = np.stack(all_mae_matrix_list,0)
+all_mae_arr = np.stack(all_mae_list,0)
 test_mae_arr = np.stack(test_mae_list,0)
+# score_arr = np.stack(score_list,0)
 
 ypred_allset.append(y_pred_all_arr)
 ypred_testset.append(y_pred_test_arr)
+maemetrix_allset.append(all_mae_matrix_arr)
+mae_allset.append(all_mae_arr)
 mae_testset.append(test_mae_arr)
+# score_set.append(score_arr)
 
-np.save("ypred_testset_%d" % seed, np.array(ypred_testset))
-np.save("mae_testset_%d" % seed, np.array(mae_testset))
-torch.save(dcrnn.state_dict(), "lig_seed%d_final.pt" % seed)
-print("training done, all results saved")
+# ypred_allarr = np.stack(ypred_allset,0)
+# ypred_testarr = np.stack(ypred_testset,0) 
+# maemetrix_allarr = np.stack(maemetrix_allset,0) 
+# mae_allarr = np.stack(mae_allset,0)
+# mae_testarr = np.stack(mae_testset,0)
+# score_arr = np.stack(score_set,0)
+# mask_arr = np.stack(mask_set,0)
+
+
+# In[65]:
+
+
+# np.save("np\ypred_allset_50_theta_baseline.npy", torch.stack(ypred_allset).cpu().detach().numpy())
+# np.save("ypred_all_final_20by8_theta_stacked_y_stnp_64_rdim_2_theta_active_learning.npy", np.array(ypred_allset))
+np.save("final_ypred_testset_final_20by8_theta_stacked_y_stnp_64_rdim_2_theta_active_learning_%d.npy" % seed, np.array(ypred_testset))
+np.save("final_maemetrix_allset_20by8_theta_stacked_y_stnp_64_rdim_2_theta_active_learning_%d.npy" % seed, np.array(maemetrix_allset))
+np.save("final_mae_allset_20by8_theta_stacked_y_stnp_64_rdim_2_theta_active_learning_%d.npy" % seed, np.array(mae_allset))
+np.save("final_mae_testset_20by8_theta_stacked_y_stnp_64_rdim_2_theta_active_learning_%d.npy" % seed, np.array(mae_testset))
+torch.save(dcrnn.state_dict(), "final_5_seq_20by8_theta_stacked_y_stnp_64_rdim_2_theta_active_learning_%d.pt" % seed)
+print('training finished, dicts saved')
+
+
+# In[60]:
+
+
+# dcrnn.load_state_dict(torch.load("state_dicts/stnp_5_seq_50_theta_2_lstm.pt"))
+
+
+# In[57]:
+
+
+# print(len(ypred_allset))
+# for seq in ypred_allset[2]:
+#     for img in seq:
+#         draw(img[0].cpu().detach().numpy(), img[1].cpu().detach().numpy())
+
+
+# In[30]:
+
+
+# ypred_allarr = np.stack(ypred_allset,0)
+# ypred_testarr = np.stack(ypred_testset,0) 
+# maemetrix_allarr = np.stack(maemetrix_allset,0) 
+# mae_allarr = np.stack(mae_allset,0)
+# mae_testarr = np.stack(mae_testset,0)
+# score_arr = np.stack(score_set,0)
+# mask_arr = np.stack(mask_set,0)
+
+
+# In[31]:
+
+
+# print(ypred_allarr.shape)
+# draw_yarr = np.squeeze(ypred_allarr, axis=0)
+# draw_yarr = draw_yarr.reshape(-1, 2, 32, 32)
+# print(draw_yarr.shape)
+# for elem in draw_yarr:
+#     draw(elem[0], elem[1])
+
+
+# In[32]:
+
+
+# vis_pred = test(torch.from_numpy(x_all).float().to(device), torch.from_numpy(y_all).float().to(device), torch.from_numpy(x_all).float().to(device))
+
+# vis_pred=[]
+# for i in range(5):
+#     vis_pred.append(vis_res(torch.from_numpy(x_all).float().to(device), torch.from_numpy(y_all).float().to(device), torch.from_numpy(testArr).float().to(device)).reshape(-1,2,32,32))
+
+
+# In[33]:
+
+
+# print(y_all.shape)
+
+
+# In[34]:
+
+
+# # print(vis_pred_shaped.shape)
+# for i,theta in enumerate(vis_pred):
+#     for j,seq in enumerate(theta):
+#         draw_ground(seq[0][0], seq[0][1], y_all[i][j+1][0], y_all[i][j+1][1])
+# #       draw(img[0][0], img[0][1])
+
+# vis_pred = np.array(vis_pred)
+# print("max diff: ", np.max(vis_pred[1:] - vis_pred[:-1]))
+# print("min diff: ", np.min(vis_pred[1:] - vis_pred[:-1]))
+# print(vis_pred[1:] - vis_pred[:-1])
+
+
+# In[ ]:
+
+
+# from google.colab import drive
+# drive.mount('/content/drive')
+# %cd '/content/drive/MyDrive/iclr2022_paper1/2D_NP_LIG_heldout/'
+
+
+# In[ ]:
+
+
 
 
